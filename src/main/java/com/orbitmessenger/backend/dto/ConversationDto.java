@@ -12,4 +12,6 @@ public class ConversationDto {
     private String name;
     private LocalDateTime createdAt;
     private List<UserDto> members;
+    private MessageDto latestMessage;
+    private int unreadCount;
 }

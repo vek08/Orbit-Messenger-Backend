@@ -77,12 +77,6 @@ public class JwtChannelInterceptor implements ChannelInterceptor {
                     throw new IllegalArgumentException("Unauthorized subscription: " + e.getMessage());
                 }
             }
-        } else if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
-            if (accessor.getUser() != null) {
-                UsernamePasswordAuthenticationToken auth = (UsernamePasswordAuthenticationToken) accessor.getUser();
-                CustomUserDetails customUserDetails = (CustomUserDetails) auth.getPrincipal();
-                presenceService.userDisconnected(customUserDetails.getUser().getId(), accessor.getSessionId());
-            }
         }
         return message;
     }

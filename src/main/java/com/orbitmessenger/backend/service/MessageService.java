@@ -50,6 +50,10 @@ public class MessageService {
                 .build();
                 
         message = messageRepository.save(message);
+        
+        // Sender automatically reads the conversation up to this point
+        conversationService.markConversationAsRead(conversationId, sender);
+        
         return MessageDto.fromEntity(message);
     }
 }

@@ -9,15 +9,21 @@ import com.orbitmessenger.backend.entity.ConversationMember;
 import com.orbitmessenger.backend.entity.User;
 import com.orbitmessenger.backend.repository.ConversationMemberRepository;
 import com.orbitmessenger.backend.repository.ConversationRepository;
+import com.orbitmessenger.backend.repository.MessageRepository;
 import com.orbitmessenger.backend.repository.UserRepository;
+import com.orbitmessenger.backend.entity.Message;
+import com.orbitmessenger.backend.dto.MessageDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -27,10 +33,48 @@ public class ConversationService {
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final MessageRepository messageRepository;
 
     public List<ConversationDto> getUserConversations(User currentUser) {
         List<Conversation> conversations = memberRepository.findConversationsByUser(currentUser);
-        return conversations.stream().map(this::mapToDto).collect(Collectors.toList());
+        
+        if (conversations.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<UUID> conversationIds = conversations.stream()
+                .map(Conversation::getId)
+                .collect(Collectors.toList());
+
+        List<Message> latestMessages = messageRepository.findLatestMessagesForConversationIds(conversationIds);
+        Map<UUID, MessageDto> latestMessageMap = latestMessages.stream()
+                .map(MessageDto::fromEntity)
+                .collect(Collectors.toMap(MessageDto::getConversationId, Function.identity()));
+
+        List<Object[]> unreadCounts = messageRepository.getUnreadCountsByUser(currentUser);
+        Map<UUID, Integer> unreadCountMap = unreadCounts.stream()
+                .collect(Collectors.toMap(
+                        row -> (UUID) row[0],
+                        row -> ((Number) row[1]).intValue()
+                ));
+
+        return conversations.stream()
+                .map(c -> {
+                    ConversationDto dto = mapToDto(c);
+                    dto.setLatestMessage(latestMessageMap.get(c.getId()));
+                    dto.setUnreadCount(unreadCountMap.getOrDefault(c.getId(), 0));
+                    return dto;
+                })
+                .sorted((c1, c2) -> {
+                    // Sort descending by latest message timestamp. Nulls (empty convos) go to the bottom.
+                    if (c1.getLatestMessage() == null && c2.getLatestMessage() == null) {
+                        return c2.getCreatedAt().compareTo(c1.getCreatedAt());
+                    }
+                    if (c1.getLatestMessage() == null) return 1;
+                    if (c2.getLatestMessage() == null) return -1;
+                    return c2.getLatestMessage().getCreatedAt().compareTo(c1.getLatestMessage().getCreatedAt());
+                })
+                .collect(Collectors.toList());
     }
 
     public ConversationDto createDirectConversation(User currentUser, CreateDirectRequest request) {
@@ -125,5 +169,16 @@ public class ConversationService {
     public void validateMembership(Conversation conversation, User user) {
         memberRepository.findByConversationAndUser(conversation, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not a member of this conversation"));
+    }
+
+    public void markConversationAsRead(UUID conversationId, User user) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
+
+        ConversationMember member = memberRepository.findByConversationAndUser(conversation, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not a member of this conversation"));
+
+        member.setLastReadAt(java.time.LocalDateTime.now());
+        memberRepository.save(member);
     }
 }

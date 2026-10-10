@@ -48,4 +48,12 @@ public class ConversationController {
             @PathVariable UUID conversationId) {
         return ResponseEntity.ok(conversationService.getConversationMembers(conversationId, userDetails.getUser()));
     }
+
+    @PostMapping("/{conversationId}/read")
+    public ResponseEntity<Void> markAsRead(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable UUID conversationId) {
+        conversationService.markConversationAsRead(conversationId, userDetails.getUser());
+        return ResponseEntity.ok().build();
+    }
 }
